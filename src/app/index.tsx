@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -8,6 +8,8 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
+  useColorScheme,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -15,10 +17,30 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Accent } from "@/constants/brand";
+import { Colors } from "@/constants/theme";
 import { fetchProducts, type Product } from "@/lib/api";
 import { signInWithGoogle } from "@/lib/auth";
 import { formatNaira } from "@/lib/format";
 import { useShop } from "@/lib/shop-context";
+
+// An invisible filler, so a lone card in the last row keeps half width instead
+// of stretching across the screen.
+type Spacer = { id: string; spacer: true };
+type GridItem = Product | Spacer;
+const SPACER: Spacer = { id: "spacer", spacer: true };
+
+function matchesQuery(product: Product, query: string): boolean {
+  const needle = query.trim().toLowerCase();
+
+  if (!needle) {
+    return true;
+  }
+
+  return (
+    product.name.toLowerCase().includes(needle) ||
+    product.description.toLowerCase().includes(needle)
+  );
+}
 
 type ProductCardProps = {
   product: Product;
@@ -65,6 +87,8 @@ function ProductCard({ product, busy, onAdd }: ProductCardProps) {
 
 export default function ShopScreen() {
   const router = useRouter();
+  const scheme = useColorScheme();
+  const colors = Colors[scheme === "dark" ? "dark" : "light"];
   const { session, loading: authLoading, add } = useShop();
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,6 +97,7 @@ export default function ShopScreen() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const loadProducts = useCallback(async () => {
     setLoadError(null);
@@ -91,6 +116,19 @@ export default function ShopScreen() {
   useEffect(() => {
     loadProducts();
   }, [loadProducts]);
+
+  const visibleProducts = useMemo(
+    () => products.filter((product) => matchesQuery(product, query)),
+    [products, query]
+  );
+
+  const gridItems = useMemo<GridItem[]>(
+    () =>
+      visibleProducts.length % 2 === 1
+        ? [...visibleProducts, SPACER]
+        : visibleProducts,
+    [visibleProducts]
+  );
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -129,6 +167,7 @@ export default function ShopScreen() {
   }
 
   const initial = session?.user.email?.[0]?.toUpperCase() ?? "?";
+  const searching = query.trim().length > 0;
 
   return (
     <ThemedView style={styles.container}>
@@ -168,22 +207,74 @@ export default function ShopScreen() {
             </Pressable>
           </View>
         ) : (
-          <FlatList
-            data={products}
-            keyExtractor={(product) => product.id}
-            numColumns={2}
-            columnWrapperStyle={styles.row}
-            contentContainerStyle={styles.list}
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            renderItem={({ item }) => (
-              <ProductCard
-                product={item}
-                busy={addingId === item.id}
-                onAdd={() => handleAdd(item)}
+          <>
+            <View
+              style={[
+                styles.searchBar,
+                { backgroundColor: colors.backgroundElement },
+              ]}
+            >
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search to shop"
+                placeholderTextColor={colors.textSecondary}
+                returnKeyType="search"
+                autoCapitalize="none"
+                autoCorrect={false}
               />
-            )}
-          />
+              {query.length > 0 && (
+                <Pressable onPress={() => setQuery("")} hitSlop={12}>
+                  <Text
+                    style={[styles.clearLabel, { color: colors.textSecondary }]}
+                  >
+                    ✕
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
+            <FlatList
+              data={gridItems}
+              keyExtractor={(item) => item.id}
+              numColumns={2}
+              columnWrapperStyle={styles.row}
+              contentContainerStyle={styles.list}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              ListEmptyComponent={
+                <View style={styles.noResults}>
+                  <ThemedText type="smallBold">
+                    {searching
+                      ? `No products match "${query.trim()}"`
+                      : "No products yet"}
+                  </ThemedText>
+                  {searching && (
+                    <Pressable
+                      style={styles.retryButton}
+                      onPress={() => setQuery("")}
+                    >
+                      <Text style={styles.addButtonLabel}>Clear search</Text>
+                    </Pressable>
+                  )}
+                </View>
+              }
+              renderItem={({ item }) =>
+                "spacer" in item ? (
+                  <View style={styles.spacer} />
+                ) : (
+                  <ProductCard
+                    product={item}
+                    busy={addingId === item.id}
+                    onAdd={() => handleAdd(item)}
+                  />
+                )
+              }
+            />
+          </>
         )}
       </SafeAreaView>
     </ThemedView>
@@ -225,8 +316,21 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: Accent,
   },
-    list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, gap: 20 },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 44,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+  },
+  searchInput: { flex: 1, fontSize: 16, paddingVertical: 10 },
+  clearLabel: { fontSize: 16, paddingLeft: 8 },
+  list: { paddingHorizontal: 20, paddingTop: 8, paddingBottom: 24, gap: 20 },
   row: { gap: 20 },
+  noResults: { paddingTop: 48, alignItems: "center", gap: 12 },
+  spacer: { flex: 1 },
   card: { flex: 1, borderRadius: 16, overflow: "hidden" },
   image: { width: "100%", aspectRatio: 1 },
   imagePlaceholder: { backgroundColor: "#9CA3AF" },
