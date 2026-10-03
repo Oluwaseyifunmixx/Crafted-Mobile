@@ -17,6 +17,7 @@ appears on your phone straight away.
   instantly, with no refresh. The Cart tab shows a live item count.
 - Account tab with your details and a sign-out that signs out **this phone
   only**, not the website.
+  - Search to shop: the product list filters by name or description as you type.
 
 ## Tech stack
 
@@ -131,4 +132,4 @@ src/
   your own cart through the API.
 - The tab bar uses Expo Router's native tabs, which Expo still marks as alpha.
 - Only Android with Expo Go has been tested. iOS has not.
-- Not built yet: checkout, order history and search.
+- Not built yet: checkout, order history and product categories.
