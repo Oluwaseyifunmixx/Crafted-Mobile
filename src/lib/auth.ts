@@ -6,38 +6,33 @@ WebBrowser.maybeCompleteAuthSession();
 
 export type AuthResult = { ok: true } | { ok: false; message: string };
 
-// Where Google's answer should land. In Expo Go this changes with the laptop's
-// network address, so it must be on Supabase's Redirect URLs list.
+// Where Google's answer should land: a link that opens this app. It must be on
+// Supabase's Redirect URLs list.
 export const AUTH_REDIRECT_URL = Linking.createURL("auth-callback");
 
 export async function signInWithGoogle(): Promise<AuthResult> {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
-    options: { redirectTo: AUTH_REDIRECT_URL, skipBrowserRedirect: true },
-  });
+    options: {
+      redirectTo: AUTH_REDIRECT_URL,
+      skipBrowserRedirect: true,
+      // Always show Google's account picker. The tap on an account is what lets
+      // Android hand the sign-in back to the app.
+      queryParams: { prompt: "select_account" },
+    },  });
 
-  if (error || !data.url) {
+    if (error || !data.url) {
     return { ok: false, message: error?.message ?? "Could not start sign-in." };
   }
 
-  // TEMPORARY: shows what the app really sends, to find out why Supabase is not
-  // returning us to the app. Contains no login tokens.
-  const sent = new URL(data.url);
-  const debugInfo = [
-    `project: ${sent.host}`,
-    `redirect_to sent: ${sent.searchParams.get("redirect_to")}`,
-  ].join("\n");
 
-  const result = await WebBrowser.openAuthSessionAsync(
+      const result = await WebBrowser.openAuthSessionAsync(
     data.url,
     AUTH_REDIRECT_URL
   );
 
-  if (result.type !== "success") {
-    return {
-      ok: false,
-      message: `Sign-in did not return to the app (${result.type}).\n${debugInfo}`,
-    };
+     if (result.type !== "success") {
+    return { ok: false, message: "Sign-in did not finish. Please try again." };
   }
 
   // The answer can come back in the query (?code=...) or the fragment
@@ -70,10 +65,11 @@ export async function signInWithGoogle(): Promise<AuthResult> {
 
   return {
     ok: false,
-    message: `${read("error_description") ?? "Sign-in did not return a session."}\nreturned to: ${result.url.split(/[?#]/)[0]}\n${debugInfo}`,
+    message: read("error_description") ?? "Sign-in did not return a session.",
   };
 }
 
 export async function signOut() {
-  await supabase.auth.signOut();
+  // "local" signs out this phone only, not the website or other devices.
+  await supabase.auth.signOut({ scope: "local" });
 }
