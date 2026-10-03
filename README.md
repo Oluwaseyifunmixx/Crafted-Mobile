@@ -18,6 +18,8 @@ appears on your phone straight away.
 - Account tab with your details and a sign-out that signs out **this phone
   only**, not the website.
   - Search to shop: the product list filters by name or description as you type.
+  - Your orders: the Orders tab lists your orders with a Paid, Awaiting payment or
+  Payment failed badge, like the website's My orders page.
 
 ## Tech stack
 
@@ -43,6 +45,7 @@ and sends the user's login token in the `Authorization` header:
 | `POST /api/cart` | Add one of a product |
 | `PATCH /api/cart/[itemId]` | Set a quantity |
 | `DELETE /api/cart/[itemId]` | Remove an item |
+| `GET /api/orders` | The Orders tab |
 
 **One login on both.** The app signs in with Google through Supabase, so the
 phone and the website share one user and one cart. The API checks the token
@@ -99,6 +102,7 @@ src/
 │   ├── _layout.tsx        Wraps the app in the shared cart provider and tabs
 │   ├── index.tsx          Shop: product grid
 │   ├── cart.tsx           Cart: quantities, totals, remove
+│   ├── orders.tsx         Orders: your orders and their payment status
 │   ├── account.tsx        Account: details and sign out
 │   └── auth-callback.tsx  Where the Google sign-in link lands
 ├── components/            Tab bar and shared UI from the Expo template
@@ -132,4 +136,6 @@ src/
   your own cart through the API.
 - The tab bar uses Expo Router's native tabs, which Expo still marks as alpha.
 - Only Android with Expo Go has been tested. iOS has not.
-- Not built yet: checkout, order history and product categories.
+- Orders load when you open the tab or pull down to refresh, not live. An
+  awaiting-payment order can only be re-checked on the website.
+- Not built yet: checkout from the phone, and product categories.
