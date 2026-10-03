@@ -84,3 +84,27 @@ export async function setCartQuantity(
 export async function removeCartItem(itemId: string): Promise<void> {
   await request(`/api/cart/${itemId}`, { method: "DELETE" });
 }
+
+
+export type OrderStatus = "paid" | "pending" | "failed";
+
+export type OrderItem = {
+  id: string;
+  productName: string;
+  unitPriceKobo: number;
+  quantity: number;
+};
+
+export type Order = {
+  id: string;
+  reference: string;
+  status: OrderStatus;
+  totalKobo: number;
+  createdAt: string;
+  items: OrderItem[];
+};
+
+export async function fetchOrders(): Promise<Order[]> {
+  const body = await request<{ orders: Order[] }>("/api/orders");
+  return body.orders;
+}
