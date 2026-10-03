@@ -1,98 +1,137 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import type { Session } from "@supabase/supabase-js";
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { fetchCart } from "@/lib/api";
+import { signInWithGoogle, signOut } from "@/lib/auth";
+import { supabase } from "@/lib/supabase";
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
-
+// Temporary screen for testing sign-in, the shop's cart API and live updates.
+// The real shop screens replace it later.
 export default function HomeScreen() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [cartText, setCartText] = useState<string | null>(null);
+  const [liveStatus, setLiveStatus] = useState<string>("not connected");
+
+  const userId = session?.user.id;
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session);
+      setLoading(false);
+    });
+
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, nextSession) => setSession(nextSession)
+    );
+
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  const loadCart = useCallback(async () => {
+    try {
+      const cart = await fetchCart();
+      const lines = cart.items.map(
+        (item) => `${item.quantity} x ${item.product.name}`
+      );
+      setCartText(
+        lines.length > 0
+          ? `${lines.join("\n")}\n(${cart.totals.itemCount} items)`
+          : "Your cart is empty."
+      );
+    } catch (error) {
+      setCartText(error instanceof Error ? error.message : "Something went wrong.");
+    }
+  }, []);
+
+  // Load the cart on sign-in, then reload it whenever Supabase announces a
+  // change to the cart_items table.
+  useEffect(() => {
+    if (!userId) {
+      setCartText(null);
+      setLiveStatus("not connected");
+      return;
+    }
+
+    loadCart();
+
+    const channel = supabase
+      .channel("cart-changes")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cart_items" },
+        () => {
+          loadCart();
+        }
+      )
+      .subscribe((status) => setLiveStatus(status));
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId, loadCart]);
+
+  async function handleSignIn() {
+    setMessage(null);
+    const result = await signInWithGoogle();
+    if (!result.ok) {
+      setMessage(result.message);
+    }
+  }
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+        <ScrollView contentContainerStyle={styles.content}>
+          <ThemedText type="title">Crafted</ThemedText>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+          {loading ? (
+            <ActivityIndicator />
+          ) : session ? (
+            <>
+              <ThemedText>Signed in as {session.user.email}</ThemedText>
+              <ThemedText type="small">Live updates: {liveStatus}</ThemedText>
+              <Pressable style={styles.button} onPress={loadCart}>
+                <ThemedText>Reload my cart</ThemedText>
+              </Pressable>
+              <Pressable style={styles.button} onPress={signOut}>
+                <ThemedText>Sign out</ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <Pressable style={styles.button} onPress={handleSignIn}>
+              <ThemedText>Sign in with Google</ThemedText>
+            </Pressable>
+          )}
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
+          {message && <ThemedText type="small">{message}</ThemedText>}
+          {cartText && <ThemedText>{cartText}</ThemedText>}
+        </ScrollView>
       </SafeAreaView>
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  content: {
+    flexGrow: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 16,
+    paddingHorizontal: 24,
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+  button: {
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#888",
   },
 });
