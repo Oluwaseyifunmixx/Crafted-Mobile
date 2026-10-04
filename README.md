@@ -11,22 +11,22 @@ appears on your phone straight away.
 ## What it does
 
 - Browse the products, with photos and prices in naira.
+- Search the shop: the product list filters by name or description as you type.
 - Sign in with Google. It is the same Supabase account as the website.
 - Add to cart, change quantities and remove items, from the phone.
 - **Live cart sync:** changes made on the website show up on the phone
   instantly, with no refresh. The Cart tab shows a live item count.
+- Your orders: the Orders tab lists your orders with a Paid, Awaiting payment or
+  Payment failed badge, like the website's My orders page.
 - Account tab with your details and a sign-out that signs out **this phone
   only**, not the website.
-  - Search to shop: the product list filters by name or description as you type.
-  - Your orders: the Orders tab lists your orders with a Paid, Awaiting payment or
-  Payment failed badge, like the website's My orders page.
 
 ## Tech stack
 
 - Expo SDK 57 (React Native), Expo Router, TypeScript
 - Supabase (Auth and Realtime) via `@supabase/supabase-js`
 - `@react-native-async-storage/async-storage` to keep the login on the phone
-- `expo-web-browser` and `expo-linking` for the Google sign-in round trip
+- `expo-linking` for the Google sign-in round trip
 
 ## How it works
 
@@ -51,6 +51,12 @@ and sends the user's login token in the `Authorization` header:
 phone and the website share one user and one cart. The API checks the token
 with Supabase, and the database's Row Level Security still applies, so a shopper
 can only ever reach their own cart.
+
+**Signing in on a phone.** The app asks Supabase for Google's sign-in address and
+opens it with `Linking.openURL`, so Android chooses the app that shows the page
+(normally the default browser). When Google finishes, Supabase sends a link that
+reopens the app, and the app turns it into a saved login. That link must be on
+Supabase's Redirect URLs list.
 
 **Instant sync.** The app subscribes to changes on the `cart_items` table. When
 anything changes, it reloads the cart from `GET /api/cart`. The notification
@@ -100,7 +106,7 @@ The app only needs the website's API and the same Supabase project:
 src/
 ├── app/
 │   ├── _layout.tsx        Wraps the app in the shared cart provider and tabs
-│   ├── index.tsx          Shop: product grid
+│   ├── index.tsx          Shop: product grid and search
 │   ├── cart.tsx           Cart: quantities, totals, remove
 │   ├── orders.tsx         Orders: your orders and their payment status
 │   ├── account.tsx        Account: details and sign out
@@ -112,7 +118,7 @@ src/
     ├── auth.ts            Google sign-in and sign-out
     ├── api.ts             Calls to the website API, with the login token attached
     ├── shop-context.tsx   Shared login and cart, plus the live subscription
-    └── format.ts          Kobo to naira
+    └── format.ts          Kobo to naira, and order dates
 ```
 
 ## Security notes
@@ -120,22 +126,33 @@ src/
 - The app only holds Supabase's **publishable** key, which is public by design.
   The secret key is never in this app.
 - Every cart request carries the user's own token, so Row Level Security protects
-  each shopper's data.
+  each shopper's data. On the website side, the routes that change data accept
+  the token only, not a browser cookie.
 - Prices come from the server. The app only displays them.
 - Signing out uses Supabase's `local` scope, so it only signs out this phone.
+- The sign-in link carries the login token itself (Supabase's default flow).
+  The safer PKCE flow needs a SHA-256 function that React Native does not
+  provide, so without a shim it falls back to a weaker check. For a real release,
+  use a development build with the app's own link scheme and a narrow Redirect
+  URLs entry.
 
 ## Known limitations
 
-- **Sign-in is sometimes flaky.** Occasionally the Google sign-in ends on a
-  window showing raw text that starts with `<a href=`, and the app is not signed
-  in. Tap the **X**, reopen Crafted from Expo Go, and sign in again. This
-  usually works on the next attempt. The cause is not identified.
+- **Sign-in and the tunnel.** Supabase rejected return links that use a raw IP
+  address in our testing, so run Expo with `--tunnel`.
+- **Sign-in history.** An earlier version opened Google in Expo's in-app browser
+  window. On Android it sometimes left a stale window showing raw redirect text,
+  and sign-in failed about every other attempt. Opening the link with
+  `Linking.openURL` instead gave about ten sign-ins in a row without a failure.
+  That is a small sample and the cause was inferred, not proven. If a sign-in
+  ever stalls, return to the app and tap Sign in again, and close any leftover
+  browser page showing raw redirect text.
 - Live sync runs **website to phone**. A change made on the phone shows on the
   website after a refresh, because the website does not listen for changes.
 - The live subscription is not filtered by user. Each notification just reloads
   your own cart through the API.
-- The tab bar uses Expo Router's native tabs, which Expo still marks as alpha.
-- Only Android with Expo Go has been tested. iOS has not.
 - Orders load when you open the tab or pull down to refresh, not live. An
   awaiting-payment order can only be re-checked on the website.
+- The tab bar uses Expo Router's native tabs, which Expo still marks as alpha.
+- Only Android with Expo Go has been tested. iOS has not.
 - Not built yet: checkout from the phone, and product categories.
