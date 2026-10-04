@@ -13,7 +13,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Accent } from "@/constants/brand";
-import { fetchOrders, type Order, type OrderStatus } from "@/lib/api";
+import {
+  confirmOrder,
+  fetchOrders,
+  type Order,
+  type OrderStatus,
+} from "@/lib/api";
 import { signInWithGoogle } from "@/lib/auth";
 import { formatNaira, formatOrderDate } from "@/lib/format";
 import { useShop } from "@/lib/shop-context";
@@ -33,7 +38,14 @@ const STATUS_BADGES: Record<
   failed: { label: "✕ Payment failed", background: "#FEE2E2", color: "#991B1B" },
 };
 
-function OrderCard({ order }: { order: Order }) {
+type OrderCardProps = {
+  order: Order;
+  checking: boolean;
+  notice?: string;
+  onCheck: () => void;
+};
+
+function OrderCard({ order, checking, notice, onCheck }: OrderCardProps) {
   const badge = STATUS_BADGES[order.status];
 
   return (
@@ -72,9 +84,29 @@ function OrderCard({ order }: { order: Order }) {
       </View>
 
       {order.status === "pending" && (
-        <ThemedText type="small" themeColor="textSecondary">
-          Already paid? Open My orders on the website to check the payment.
-        </ThemedText>
+        <View style={styles.pendingBox}>
+          <ThemedText type="small" themeColor="textSecondary">
+            Already paid? Check with Paystack to update this order.
+          </ThemedText>
+
+          <Pressable
+            style={[styles.checkButton, checking && styles.disabled]}
+            onPress={onCheck}
+            disabled={checking}
+          >
+            {checking ? (
+              <ActivityIndicator color={Accent} />
+            ) : (
+              <Text style={styles.checkLabel}>Check payment status</Text>
+            )}
+          </Pressable>
+
+          {notice && (
+            <ThemedText type="small" themeColor="textSecondary">
+              {notice}
+            </ThemedText>
+          )}
+        </View>
       )}
     </ThemedView>
   );
@@ -82,13 +114,15 @@ function OrderCard({ order }: { order: Order }) {
 
 export default function OrdersScreen() {
   const router = useRouter();
-  const { session, loading: authLoading } = useShop();
+  const { session, loading: authLoading, refreshCart } = useShop();
   const userId = session?.user.id;
 
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [signInError, setSignInError] = useState<string | null>(null);
+  const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [notices, setNotices] = useState<Record<string, string>>({});
 
   const loadOrders = useCallback(async () => {
     try {
@@ -126,6 +160,51 @@ export default function OrdersScreen() {
 
     if (!result.ok) {
       setSignInError(result.message);
+    }
+  }
+
+  function setNotice(orderId: string, text: string | null) {
+    setNotices((current) => {
+      const next = { ...current };
+
+      if (text) {
+        next[orderId] = text;
+      } else {
+        delete next[orderId];
+      }
+
+      return next;
+    });
+  }
+
+  // Asks the shop to re-check the payment with Paystack. The server marks an
+  // order paid at most once, so pressing this repeatedly is safe.
+  async function handleCheck(order: Order) {
+    setCheckingId(order.id);
+    setNotice(order.id, null);
+
+    try {
+      const status = await confirmOrder(order.id);
+
+      if (status === "pending") {
+        setNotice(
+          order.id,
+          "No payment received yet. If you have just paid, wait a few seconds and check again."
+        );
+        return;
+      }
+
+      // Paid or failed: the order changed, and a payment also empties the cart.
+      await Promise.all([loadOrders(), refreshCart()]);
+    } catch (caught) {
+      setNotice(
+        order.id,
+        caught instanceof Error
+          ? caught.message
+          : "We couldn't check the payment. Please try again."
+      );
+    } finally {
+      setCheckingId(null);
     }
   }
 
@@ -192,11 +271,19 @@ export default function OrdersScreen() {
 
         <FlatList
           data={orders}
+          extraData={[checkingId, notices]}
           keyExtractor={(order) => order.id}
           contentContainerStyle={styles.list}
           refreshing={refreshing}
           onRefresh={handleRefresh}
-          renderItem={({ item }) => <OrderCard order={item} />}
+          renderItem={({ item }) => (
+            <OrderCard
+              order={item}
+              checking={checkingId === item.id}
+              notice={notices[item.id]}
+              onCheck={() => handleCheck(item)}
+            />
+          )}
         />
       </>
     );
@@ -262,4 +349,16 @@ const styles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "#9CA3AF",
   },
+  pendingBox: { gap: 8 },
+  checkButton: {
+    minHeight: 44,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: Accent,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  checkLabel: { color: Accent, fontWeight: "600" },
+  disabled: { opacity: 0.6 },
 });
