@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { AppState } from "react-native";
 import type { Session } from "@supabase/supabase-js";
 
 import {
@@ -105,6 +106,23 @@ export function ShopProvider({ children }: { children: ReactNode }) {
     return () => {
       supabase.removeChannel(channel);
     };
+  }, [userId, refreshCart]);
+
+    // Reload the cart when the app comes back to the front. While the app was in
+  // the background (for example on Paystack's page), the live connection may
+  // have paused and missed changes, such as the cart being emptied by a payment.
+  useEffect(() => {
+    if (!userId) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        refreshCart();
+      }
+    });
+
+    return () => subscription.remove();
   }, [userId, refreshCart]);
 
   const add = useCallback(

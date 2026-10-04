@@ -108,3 +108,30 @@ export async function fetchOrders(): Promise<Order[]> {
   const body = await request<{ orders: Order[] }>("/api/orders");
   return body.orders;
 }
+
+export type DeliveryDetails = {
+  fullName: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+};
+
+export type CheckoutStart = { paymentUrl: string; orderId: string };
+
+// Creates a pending order from the cart and returns Paystack's payment page.
+export function startCheckout(details: DeliveryDetails): Promise<CheckoutStart> {
+  return request<CheckoutStart>("/api/checkout", {
+    method: "POST",
+    body: JSON.stringify(details),
+  });
+}
+
+// Asks the shop to re-check an order's payment with Paystack. Safe to repeat.
+export async function confirmOrder(orderId: string): Promise<OrderStatus> {
+  const body = await request<{ status: OrderStatus }>(
+    `/api/orders/${orderId}/confirm`,
+    { method: "POST" }
+  );
+  return body.status;
+}

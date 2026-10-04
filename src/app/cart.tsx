@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { CheckoutPanel } from "@/components/checkout-panel";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { Accent } from "@/constants/brand";
@@ -111,6 +112,9 @@ export default function CartScreen() {
 
   const [busyId, setBusyId] = useState<string | null>(null);
   const [signInError, setSignInError] = useState<string | null>(null);
+  // The cart total when checkout was opened. While this is set, the checkout
+  // panel replaces the cart, even after the cart empties on payment.
+  const [checkoutTotal, setCheckoutTotal] = useState<number | null>(null);
 
   async function handleSignIn() {
     setSignInError(null);
@@ -158,6 +162,15 @@ export default function CartScreen() {
             <Text style={styles.primaryLabel}>Sign in with Google</Text>
           </Pressable>
         </View>
+      );
+    }
+
+    if (checkoutTotal !== null) {
+      return (
+        <CheckoutPanel
+          subtotalKobo={checkoutTotal}
+          onClose={() => setCheckoutTotal(null)}
+        />
       );
     }
 
@@ -230,6 +243,13 @@ export default function CartScreen() {
               {formatNaira(cart.totals.subtotalKobo)}
             </ThemedText>
           </View>
+
+          <Pressable
+            style={styles.checkoutButton}
+            onPress={() => setCheckoutTotal(cart.totals.subtotalKobo)}
+          >
+            <Text style={styles.primaryLabel}>Checkout</Text>
+          </Pressable>
         </ThemedView>
       </>
     );
@@ -240,7 +260,7 @@ export default function CartScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.header}>
           <ThemedText type="title" style={styles.heading}>
-            Cart
+            {checkoutTotal !== null ? "Checkout" : "Cart"}
           </ThemedText>
         </View>
 
@@ -302,10 +322,19 @@ const styles = StyleSheet.create({
   removeButton: { marginLeft: 8, paddingVertical: 6, paddingHorizontal: 4 },
   removeLabel: { color: "#DC2626", fontWeight: "600" },
   footer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 16,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
   total: { fontSize: 26, lineHeight: 32 },
+  checkoutButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    backgroundColor: Accent,
+  },
 });
