@@ -145,8 +145,9 @@ src/
   and sign-in failed about every other attempt. Opening the link with
   `Linking.openURL` instead gave about ten sign-ins in a row without a failure.
   That is a small sample and the cause was inferred, not proven. If a sign-in
-  ever stalls, return to the app and tap Sign in again, and close any leftover
-  browser page showing raw redirect text.
+  ever stalls, return to the app and tap Sign in again. Each sign-in leaves one
+  browser tab behind, because an app cannot close a browser tab on Android.
+  Those pages contain a login token in their address, so close them.
 - Live sync runs **website to phone**. A change made on the phone shows on the
   website after a refresh, because the website does not listen for changes.
 - The live subscription is not filtered by user. Each notification just reloads
