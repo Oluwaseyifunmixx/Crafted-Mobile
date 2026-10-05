@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "crafted-mobile",
+    "name": "Crafted",
     "slug": "crafted-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,6 +11,7 @@
       "icon": "./assets/expo.icon"
     },
     "android": {
+      "package": "com.oluwaseyifunmixx.craftedmobile",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -38,6 +39,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "7a2df914-3805-46be-85f0-4d196a15545c"
+      }
+    },
+    "owner": "oluwaseyifunmi"
   }
 }
