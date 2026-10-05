@@ -7,6 +7,7 @@ appears on your phone straight away, and you can check out from the phone.
 
 - **Website:** https://shop-checkout-six.vercel.app
 - **Website code:** https://github.com/Oluwaseyifunmixx/shop-checkout
+- **Android app (APK):** [Download from Google Drive](https://drive.google.com/file/d/1PWRVg3neJ3JC-jzFwZ_BtnN6-urcRgNA/view?usp=sharing)
 
 ## What it does
 
@@ -24,18 +25,37 @@ appears on your phone straight away, and you can check out from the phone.
 - Account tab with your details and a sign-out that signs out **this phone
   only**, not the website.
 
+## Install the app (Android)
+
+1. Open the [APK link](https://drive.google.com/file/d/1PWRVg3neJ3JC-jzFwZ_BtnN6-urcRgNA/view?usp=sharing)
+   on an Android phone and tap Download. Chrome warns that APK files can be
+   harmful, because it says that about every APK. Choose Keep. Google Drive may
+   also say it cannot scan the file for viruses. Choose Download anyway.
+2. Open the downloaded file. If Android asks, allow installing from your browser
+   (Settings, Install unknown apps).
+3. If Play Protect says the app is unknown, choose Install anyway. It is not from
+   the Play Store.
+4. Open Crafted and tap Sign in with Google.
+
+The APK was built with EAS Build (`eas build -p android --profile preview`) from
+commit `1881a6b`. It needs an internet connection, and it talks to the live
+website and the same Supabase project. The build profile in `eas.json` holds the
+two public Supabase values, which are public by design.
+
 ## Tech stack
 
 - Expo SDK 57 (React Native), Expo Router, TypeScript
 - Supabase (Auth and Realtime) via `@supabase/supabase-js`
 - `@react-native-async-storage/async-storage` to keep the login on the phone
 - `expo-linking` for the Google sign-in round trip and for opening Paystack
+- EAS Build, to produce the installable APK
 
 ## How it works
 
 ```
 Phone ──(HTTPS, Bearer token)──> Crafted website API ──> Supabase (Row Level Security)
 Phone <──────── Realtime: "cart_items changed" ───────── Supabase
+Website <─────── Realtime: "cart_items changed" ───────── Supabase
 ```
 
 **Same endpoints as the website.** The app calls the website's route handlers
@@ -60,8 +80,9 @@ can only ever reach their own cart.
 **Signing in on a phone.** The app asks Supabase for Google's sign-in address and
 opens it with `Linking.openURL`, so Android chooses the app that shows the page
 (normally the default browser). When Google finishes, Supabase sends a link that
-reopens the app, and the app turns it into a saved login. That link must be on
-Supabase's Redirect URLs list.
+reopens the app, and the app turns it into a saved login. In the installed app
+that link uses the app's own scheme, `craftedmobile://auth-callback`. In Expo Go
+it is an `exp://` link. Either way, it must be on Supabase's Redirect URLs list.
 
 **Instant sync.** The app subscribes to changes on the `cart_items` table. When
 anything changes, it reloads the cart from `GET /api/cart`. The notification
@@ -70,7 +91,9 @@ source of truth and no merging logic. The cart lives in a single shared
 provider (`src/lib/shop-context.tsx`), so the Cart screen and the tab badge
 always agree and only one live connection is open. The cart is also reloaded
 whenever the app comes back to the front, because the live connection can pause
-while the app is in the background (for example, on Paystack's page).
+while the app is in the background (for example, on Paystack's page). The
+website listens in the same way, so a change made on the phone refreshes the
+website's cart without a reload.
 
 **Checking out from the phone.**
 
@@ -95,10 +118,9 @@ Paystack runs in **test mode**. To pay, use Paystack's test card
 **4084 0840 8408 4081**, any future expiry date and CVV **408**. If asked, the
 PIN is **0000** and the OTP is **123456**. No real money is taken.
 
-## Run it
+## Run it from source (Expo Go)
 
-You need Node.js, and **Expo Go** on an Android phone. It was built and tested
-on a Samsung Android phone through Expo Go.
+You need Node.js, and **Expo Go** on an Android phone.
 
 ```bash
 git clone <this repository>
@@ -110,10 +132,24 @@ npx expo start --tunnel
 
 Scan the QR code with Expo Go.
 
-**Use `--tunnel`.** In our testing, Supabase did not send the Google sign-in back
-to the app when the return link used a raw IP address (what Expo uses on Wi-Fi),
-even though the link was on its allowed list. A tunnel link
-(`exp://<name>.exp.direct/...`) worked.
+**Use `--tunnel` with Expo Go.** In our testing, Supabase did not send the Google
+sign-in back to the app when the return link used a raw IP address (what Expo
+uses on Wi-Fi), even though the link was on its allowed list. A tunnel link
+(`exp://<name>.exp.direct/...`) worked. The installed APK uses its own link
+scheme instead, so it does not need a tunnel.
+
+## Build the APK yourself
+
+```bash
+npm install -g eas-cli
+eas login
+eas build -p android --profile preview
+```
+
+The `preview` profile in `eas.json` builds an APK and passes the two public
+Supabase values to the build, because the cloud build cannot see `.env.local`.
+The app's name, link scheme (`craftedmobile`) and Android package are in
+`app.json`. Free builds can wait in a queue.
 
 ## Use your own Supabase project
 
@@ -122,10 +158,12 @@ The app only needs the website's API and the same Supabase project:
 1. Deploy the website, and put its address in `API_URL` in `src/lib/api.ts`.
    Paystack and Mailgun are configured on the website. The app never holds
    their keys.
-2. Put your project's URL and publishable key in `.env.local`.
+2. Put your project's URL and publishable key in `.env.local`, and in the
+   `env` section of `eas.json` if you build the APK.
 3. Supabase, **Authentication → URL Configuration → Redirect URLs**: add
-   `exp://**` (this is loose and for development only; for a real release use
-   the app's own scheme, or at least `exp://*.exp.direct/**`).
+   `craftedmobile://**` for the installed app, and `exp://**` for development
+   through Expo Go. Both are loose and meant for development; for a real release,
+   keep only the app's own scheme.
 4. Switch Realtime on for the cart table (SQL editor):
 
 ```sql
@@ -154,12 +192,15 @@ src/
     ├── shop-context.tsx   Shared login and cart, plus the live subscription
     ├── delivery.ts        Delivery form checks (the server checks again)
     └── format.ts          Kobo to naira, and order dates
+app.json                   App name, link scheme and Android package
+eas.json                   The APK build profile
 ```
 
 ## Security notes
 
 - The app only holds Supabase's **publishable** key, which is public by design.
-  The secret key is never in this app, and neither are any Paystack keys.
+  The secret key is never in this app, and neither are any Paystack keys. The
+  same two public values are in `eas.json` so the cloud build can use them.
 - Every cart and checkout request carries the user's own token, so Row Level
   Security protects each shopper's data. On the website side, the routes that
   change data accept the token only, not a browser cookie.
@@ -171,35 +212,9 @@ src/
 - The sign-in link carries the login token itself (Supabase's default flow).
   The safer PKCE flow needs a SHA-256 function that React Native does not
   provide, so without a shim it falls back to a weaker check. For a real release,
-  use a development build with the app's own link scheme and a narrow Redirect
-  URLs entry.
+  keep only the app's own link scheme in Supabase's Redirect URLs.
 
 ## Known limitations
 
-- **Sign-in and the tunnel.** Supabase rejected return links that use a raw IP
-  address in our testing, so run Expo with `--tunnel`.
-- **Sign-in history.** An earlier version opened Google in Expo's in-app browser
-  window. On Android it sometimes left a stale window showing raw redirect text,
-  and sign-in failed about every other attempt. Opening the link with
-  `Linking.openURL` instead gave about ten sign-ins in a row without a failure.
-  That is a small sample and the cause was inferred, not proven. If a sign-in
-  ever stalls, return to the app and tap Sign in again. Each sign-in leaves one
-  browser tab behind, because an app cannot close a browser tab on Android.
-  Those pages contain a login token in their address, so close them.
-- **Returning from Paystack is manual.** The payment confirmation page on the
-  website cannot reopen the app. A "back to the app" button was tried and did
-  nothing on the tested phone, so the page tells the shopper to use the back
-  button or recent apps, and the app re-checks the payment when it returns.
-- **Orders are created when you tap Pay.** If you leave without paying, the
-  order stays under Awaiting payment, as on the website.
-- Confirmation emails are sent by the website through Mailgun's free sandbox,
-  so they only reach authorised addresses.
-- Live sync runs **website to phone**. A change made on the phone shows on the
-  website after a refresh, because the website does not listen for changes.
-- The live subscription is not filtered by user. Each notification just reloads
-  your own cart through the API.
-- Orders load when you open the tab or pull down to refresh, not live.
-- The tab bar uses Expo Router's native tabs, which Expo still marks as alpha.
-- Only Android with Expo Go has been tested, and only in Paystack's test mode.
-  iOS has not been tested.
-- Not built yet: product categories.
+- **Sign-in in Expo Go needs the tunnel.** Supabase rejected return links that
+  use a raw IP address in our testing. The installed APK does
